@@ -1,122 +1,114 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'pages/login_page.dart';
+import 'pages/home_page.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Load environment variables (only for non-web platforms)
+  String supabaseUrl;
+  String supabaseAnonKey;
+
+  try {
+    await dotenv.load(fileName: ".env");
+    supabaseUrl = dotenv.env['SUPABASE_URL']!;
+    supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY']!;
+  } catch (e) {
+    // On web, .env might not be available, use fallback values
+    // In production, these should be set via build environment variables
+    supabaseUrl = 'https://rvxbzlgnojnaejcjegyz.supabase.co';
+    supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ2eGJ6bGdub2puYWVqY2plZ3l6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE5Mjk5NTMsImV4cCI6MjA3NzUwNTk1M30.zpcHyaqUwCK4MHw_q7bC4F2C5vG8q9WlMFGHf6zlE2Y';
+  }
+
+  await Supabase.initialize(
+    url: supabaseUrl,
+    anonKey: supabaseAnonKey,
+  );
+
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
-    );
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  bool _isLoading = true;
+  Widget? _homeWidget;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAuthAndRole();
   }
-}
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+  Future<void> _checkAuthAndRole() async {
+    final user = Supabase.instance.client.auth.currentUser;
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
+    if (user == null) {
+      setState(() {
+        _isLoading = false;
+        _homeWidget = const LoginPage();
+      });
+      return;
+    }
 
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
+    try {
+      // Kiểm tra role của user
+      final userData = await Supabase.instance.client
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .single();
 
-  final String title;
+      final role = userData['role'] as String;
 
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+      if (role == 'resident') {
+        setState(() {
+          _isLoading = false;
+          _homeWidget = const HomePage();
+        });
+      } else {
+        // Role không hợp lệ, đăng xuất
+        await Supabase.instance.client.auth.signOut();
+        setState(() {
+          _isLoading = false;
+          _homeWidget = const LoginPage();
+        });
+      }
+    } catch (e) {
+      // Lỗi khi query, fallback về login
+      await Supabase.instance.client.auth.signOut();
+      setState(() {
+        _isLoading = false;
+        _homeWidget = const LoginPage();
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
+    if (_isLoading) {
+      return const MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: CircularProgressIndicator(),
+          ),
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+      );
+    }
+
+    return MaterialApp(
+      title: 'BECAMEX Mobile',
+      theme: ThemeData.light(),
+      darkTheme: ThemeData.dark(),
+      home: _homeWidget,
+      debugShowCheckedModeBanner: false,
     );
   }
 }
